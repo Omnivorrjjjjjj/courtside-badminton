@@ -105,7 +105,7 @@ function adminContent() {
 function scoreAdmin() {
   const s=store.state, m=s.matches.find(m=>m.id===focusedMatch)||s.matches[0];focusedMatch=m.id;
   const currentLineups=lineupDrafts.get(m.id)?.lineups||m.lineups;
-  const staleDraft=lineupDrafts.has(m.id)&&lineupDrafts.get(m.id).revision!==s.revision;
+  const staleDraft=m.status==='pending'&&lineupDrafts.has(m.id)&&lineupDrafts.get(m.id).revision!==s.revision;
   const disable = store.pending || !store.connected;
   return `<div class="admin-match"><label>選擇比賽<select id="match-select">${s.matches.map(x=>`<option value="${x.id}" ${x.id===m.id?'selected':''}>${x.sides.join(' vs ')}・${x.label} — ${statusName(x.status)} ${x.score.join('：')}</option>`).join('')}</select></label>
     <div class="admin-score">${m.sides.map((id,i)=>`<div class="admin-side"><span>${id}・${escape(s.teams[id].name)}</span><strong>${m.score[i]}</strong><div class="score-controls"><button class="button secondary" data-delta="-1" data-side="${i}" aria-label="${id} 隊減 1 分" ${disable||m.status!=='live'||m.score[i]===0?'disabled':''}>−</button><button class="button" data-delta="1" data-side="${i}" aria-label="${id} 隊加 1 分" ${disable||m.status!=='live'||winner(m,s.settings)!==null?'disabled':''}>＋</button></div></div>`).join('')}</div>

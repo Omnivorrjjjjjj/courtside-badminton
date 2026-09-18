@@ -22,7 +22,7 @@
 
 ## 電腦與手機 UX
 
-以瀏覽器 viewport 檢查 1440px、390px、320px；document scrollWidth 均等於 viewport width。這是響應式瀏覽器驗證，尚未涵蓋所有真實手機或 Safari 版本。
+以瀏覽器 viewport 檢查 1440px、1280px、390px、320px；document scrollWidth 均等於 viewport width。這是響應式瀏覽器驗證，尚未涵蓋所有真實手機或 Safari 版本。
 
 實際操作與修正：
 
@@ -35,6 +35,15 @@
 - 隊員／賽制等儲存後，成功提示在視窗重繪後仍保留。
 - 賽制採中文項目；僅顯示目前積分模式需要的設定欄位。
 - 移除每次即時更新重播的入場動畫，減少畫面閃動。
+
+## GitHub Pages 正式發布
+
+- 獨立 repository：`Omnivorrjjjjjj/courtside-badminton`。
+- GitHub Actions 完成測試與 Pages 部署；公開網址可載入所有模組並顯示「即時連線」。
+- 在公開頁保持開啟時，以另一個已認證客戶端更新雲端播報，公開頁不重新整理即收到消息。
+- 測試訊息還原後，公開頁亦即時回到無播報狀態；三隊積分均為 0。
+- 公開網址的 390px 手機版無水平溢出，顯示比分、球員與三欄積分表。
+- 管理密碼、管理者電子郵件、私鑰及 QA 檔案未納入 Git；正式規則拒絕匿名和非管理者寫入。
 
 ## 維運界線
 
