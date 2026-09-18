@@ -2,6 +2,7 @@ import { PAIRS, TYPE_LABELS, pairStats, standings, winner, clone } from './model
 import { createStore, readableError } from './store.js';
 
 const $ = selector => document.querySelector(selector);
+const publishedTitle = document.title.replace(/ · COURTSIDE$/, '');
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
   triangle: '<path d="M12 3 22 21H2Z"/><path d="m12 10 6 11H6Z"/>',
@@ -26,13 +27,13 @@ function focusSection(selector) { const section=$(selector);if(!section)return;s
 function render() {
   if (!store) return;
   const s = store.state;
-  document.title = `${s?.title || '三隊羽球對抗賽'} · COURTSIDE`;
+  document.title = `${s?.title || publishedTitle} · COURTSIDE`;
   $('#app').innerHTML = `<div class="shell">
     <header class="topbar"><a href="#" class="brand" aria-label="COURTSIDE 首頁">${icon('triangle')} COURTSIDE <span>場邊速報</span></a>
       <nav class="nav" aria-label="主要導覽">${[['overview','戰況總覽'],['schedule','完整賽程'],['teams','參賽隊伍']].map(([id,name]) => `<button data-view="${id}" class="${view === id ? 'active' : ''}" ${view === id ? 'aria-current="page"' : ''}>${name}</button>`).join('')}</nav>
       <div class="tools"><button class="icon-button" data-action="screen" title="大螢幕模式" aria-label="大螢幕模式" aria-pressed="${document.body.classList.contains('screen-mode')}">${icon('expand')}</button><button class="button secondary" data-action="admin" aria-label="賽事管理">${icon('settings')}<span class="admin-label">賽事管理</span></button></div>
     </header>
-    <div class="intro"><div><div class="eyebrow">TRI-TEAM TOURNAMENT / LIVE SCORE</div><h1>${escape(s?.title || '三隊羽球對抗賽')}</h1><div class="event-meta"><span>三隊・每隊 3 男 1 女</span><span class="separator">/</span><span>${s ? `每局 ${s.settings.target} 分・${s.settings.winBy === 1 ? '先到制' : '領先 2 分'}${s.settings.cap !== s.settings.target ? `・${s.settings.cap} 分封頂` : ''}` : '即時比分與文字播報'}</span></div></div><span class="connection" role="status"><i class="dot ${store.connected && store.mode === 'cloud' ? 'online' : 'offline'}"></i>${statusLabel()}</span></div>
+    <div class="intro"><div><div class="eyebrow">TRI-TEAM TOURNAMENT / LIVE SCORE</div><h1>${escape(s?.title || publishedTitle)}</h1><div class="event-meta"><span>三隊・每隊 3 男 1 女</span><span class="separator">/</span><span>${s ? `每局 ${s.settings.target} 分・${s.settings.winBy === 1 ? '先到制' : '領先 2 分'}${s.settings.cap !== s.settings.target ? `・${s.settings.cap} 分封頂` : ''}` : '即時比分與文字播報'}</span></div></div><span class="connection" role="status"><i class="dot ${store.connected && store.mode === 'cloud' ? 'online' : 'offline'}"></i>${statusLabel()}</span></div>
     ${store.mode === 'demo' ? '<div class="demo-banner"><span>目前為示範賽事，比分與姓名均為範例；操作只在這台裝置的同一瀏覽器同步。</span><button data-action="admin">試用管理介面</button></div>' : !store.connected && store.ready ? '<div class="demo-banner"><span>等待雲端確認，顯示最後收到的比分。取得最新資料後會自動恢復計分。</span></div>' : ''}
     ${store.error ? `<div class="error">${escape(store.error)}</div>` : ''}
     ${s ? (view === 'overview' ? overview(s) : view === 'schedule' ? schedule(s) : rosters(s)) : `<section class="panel empty-state"><h2>${store.ready ? '賽事準備中' : '正在連接球場…'}</h2><p>${store.ready ? '管理者建立賽事後，比分會自動出現在這裡。' : '正在取得最新比分與賽程。'}</p><button class="button" data-action="admin">賽事管理</button></section>`}

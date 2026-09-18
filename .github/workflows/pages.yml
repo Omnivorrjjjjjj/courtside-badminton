@@ -23,6 +23,8 @@ jobs:
           node-version: '22'
       - name: Check scoring logic
         run: npm test
+      - name: Sync share preview with the public event title
+        run: node scripts/sync-share-meta.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -80,6 +80,14 @@ npm test
 
 GitHub Pages 使用 `.github/workflows/pages.yml`，推送 `main` 或手動啟動 workflow 後，先跑測試再部署 `dist/`。Pages 的 Source 必須為 GitHub Actions。資源使用相對路徑，可在 repository 子路徑運作。
 
+### LINE 與社群分享標題
+
+LINE 預覽讀取回傳 HTML 中的 Open Graph 標題；Firebase 載入後修改網頁名稱，不會直接更新分享爬蟲取得的 HTML。發布流程會執行 `node scripts/sync-share-meta.mjs`，唯讀取得目前的公開賽事名稱，同步 `<title>`、Open Graph 與描述，讀取失敗則停止部署。
+
+管理介面改名後，觀眾頁立即更新；**分享標題需再執行一次 GitHub Pages workflow** 才更新。可在 Actions 手動執行 `Deploy Courtside to GitHub Pages`，或用 `gh workflow run pages.yml`。不需改動比分、名單或登入設定。
+
+已送出的 LINE 卡片可能保留舊快取，網站不能直接修改既有聊天訊息。重新分享時可使用帶新版本參數的連結，例如 `?share=20260919-1`；LINE 的實際快取刷新時間由 LINE 決定。
+
 測試與 UX 驗證詳見 [VERIFICATION.md](VERIFICATION.md)。
 
 官方文件：[GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)、[Firestore 即時監聽](https://firebase.google.com/docs/firestore/query-data/listen)、[Firestore 交易](https://firebase.google.com/docs/firestore/manage-data/transactions)、[安全規則](https://firebase.google.com/docs/firestore/security/rules-conditions)、[Web API key](https://firebase.google.com/docs/projects/api-keys)。
