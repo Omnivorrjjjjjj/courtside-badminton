@@ -1,0 +1,35 @@
+// Template for a DEDICATED tournament Firebase project.
+// Do not deploy these rules to a project that contains other applications.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /badmintonEvents/three-team-cup {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == 'REPLACE_WITH_ADMIN_UID';
+      }
+      function validEvent() {
+        let d = request.resource.data;
+        return d.keys().hasAll(['schemaVersion','revision','title','venue','teams','settings','matches','feed','updatedAt'])
+          && d.keys().hasOnly(['schemaVersion','revision','title','venue','teams','settings','matches','feed','updatedAt'])
+          && d.schemaVersion == 1 && d.revision is int
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 80
+          && d.venue is string && d.venue.size() <= 50
+          && d.teams is map && d.teams.keys().hasOnly(['A','B','C']) && d.teams.keys().hasAll(['A','B','C'])
+          && d.settings is map && d.settings.target is int && d.settings.target >= 1 && d.settings.target <= 199
+          && d.settings.cap is int && d.settings.cap >= d.settings.target && d.settings.cap <= 199
+          && d.settings.winBy in [1, 2]
+          && d.settings.standingsMode in ['rally','match','tie']
+          && d.settings.broadcast in ['feed','manual']
+          && d.settings.types is list && d.settings.types.size() >= 1 && d.settings.types.size() <= 8
+          && d.matches is list && d.matches.size() == d.settings.types.size() * 3
+          && d.feed is list && d.feed.size() <= 120
+          && d.updatedAt == request.time;
+      }
+      allow get: if true;
+      allow list: if false;
+      allow create: if isOwner() && validEvent() && request.resource.data.revision == 1;
+      allow update: if isOwner() && validEvent() && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if false;
+    }
+  }
+}

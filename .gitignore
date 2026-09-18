@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+.sites-runtime/
+.env*
+!.env.example
+qa/
+.private/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
