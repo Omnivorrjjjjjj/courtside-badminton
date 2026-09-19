@@ -48,6 +48,11 @@ export function winner(match, settings) {
   const high = Math.max(a, b), low = Math.min(a, b);
   return (high >= settings.target && (high - low >= settings.winBy || high >= settings.cap)) ? (a > b ? 0 : 1) : null;
 }
+export function scoreEntryIsCurrent(state, action) {
+  const match = state.matches.find(m => m.id === action.matchId);
+  return !!match && Array.isArray(action.expectedScore) && action.expectedScore.length === 2
+    && match.status === action.expectedStatus && match.score.every((n, i) => n === action.expectedScore[i]);
+}
 export function pairStats(state, pair) {
   const matches = state.matches.filter(m => m.pair === pair);
   const scores = [0, 0], wins = [0, 0];
@@ -78,8 +83,18 @@ export function reduce(state, action) {
   const s = clone(state), now = action.time || Date.now();
   const match = s.matches.find(m => m.id === action.matchId);
   const note = text => { s.feed.unshift({ id: `${now}-${s.revision + 1}`, time: now, text, kind: 'system' }); };
-  if (['start', 'pause', 'score', 'undo', 'finish', 'reopen', 'lineup'].includes(action.type)) requireThat(match, '找不到這場比賽。');
+  if (['start', 'pause', 'score', 'set-score', 'undo', 'finish', 'reopen', 'lineup'].includes(action.type)) requireThat(match, '找不到這場比賽。');
   switch (action.type) {
+    case 'set-score': {
+      requireThat(['live', 'paused'].includes(match.status), '請先開始比賽；已完賽的場次需先重新開啟。');
+      requireThat(scoreEntryIsCurrent(s, action), '本場比分已被更新，請載入最新比分後再輸入。');
+      requireThat(Array.isArray(action.score) && action.score.length === 2 && action.score.every(n => Number.isInteger(n) && n >= 0 && n <= s.settings.cap), `請輸入 0 到 ${s.settings.cap} 的整數比分。`);
+      requireThat(!action.score.every(n => n === s.settings.cap), '封頂時雙方比分不能相同，請確認比分。');
+      requireThat(action.score.some((n, i) => n !== match.score[i]), '比分尚未變更。');
+      match.history = [...(match.history || []), match.score].slice(-500);
+      match.score = [...action.score];
+      break;
+    }
     case 'score': {
       requireThat(match.status === 'live', '請先開始或恢復比賽。');
       requireThat([0, 1].includes(action.side) && [-1, 1].includes(action.delta), '比分操作無效。');

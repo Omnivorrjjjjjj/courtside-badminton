@@ -1,10 +1,11 @@
-import { createState, reduce, normalizeState, encodeFirestore, decodeFirestore } from './model.js';
+import { createState, reduce, normalizeState, encodeFirestore, decodeFirestore } from './model.js?v=manual-score-1';
 import { cloudConfig, tournamentId, adminUid } from './config.js';
 
 export function createStore(onChange) {
   const localKey = `courtside-demo-v1:${tournamentId}`;
   const store = { mode: cloudConfig ? 'cloud' : 'demo', state: null, ready: false, connected: false, pending: false, user: null, error: '', isAdmin: false };
   const notify = () => onChange(store);
+  const adopt = (state, allowSame = true) => { if (!store.state || state.revision > store.state.revision || (allowSame && state.revision === store.state.revision)) store.state = state; };
   let db, auth, api, authApi, reference;
   if (!cloudConfig) {
     try { store.state = normalizeState(JSON.parse(localStorage.getItem(localKey))) } catch { store.state = createState(true); }
@@ -28,7 +29,7 @@ export function createStore(onChange) {
         api.onSnapshot(reference, { includeMetadataChanges: true }, snap => {
           if (snap.metadata.hasPendingWrites) return; // Keep showing server-confirmed state until commit.
           try {
-            if (snap.exists()) store.state = decodeFirestore(snap.data());
+            if (snap.exists()) adopt(decodeFirestore(snap.data()));
             else if (!snap.metadata.fromCache) store.state = null;
             store.error = '';
           }
@@ -39,7 +40,7 @@ export function createStore(onChange) {
         }, error => { store.error = readableError(error); store.connected = false; store.ready = true; notify(); });
         addEventListener('offline', () => { store.connected = false; notify(); });
         addEventListener('online', async () => {
-          try { const snap = await api.getDocFromServer(reference); store.state = snap.exists() ? decodeFirestore(snap.data()) : null; store.connected = true; store.ready = true; store.error = ''; notify(); } catch { store.connected = false; notify(); }
+          try { const snap = await api.getDocFromServer(reference); if(snap.exists())adopt(decodeFirestore(snap.data()));else store.state=null; store.connected = true; store.ready = true; store.error = ''; notify(); } catch { store.connected = false; notify(); }
         });
       } catch (error) { store.error = readableError(error); store.ready = true; notify(); }
     })();
@@ -58,11 +59,13 @@ export function createStore(onChange) {
     if (store.mode !== 'cloud' || !store.isAdmin || !store.connected || store.pending) throw new Error('請由管理者連線後建立賽事。');
     store.pending = true; notify();
     try {
-      await api.runTransaction(db, async transaction => {
+      const committed = await api.runTransaction(db, async transaction => {
         if ((await transaction.get(reference)).exists()) throw new Error('賽事已經建立，請重新載入。');
         const initial = createState(false); initial.revision = 1;
         transaction.set(reference, { ...encodeFirestore(initial), updatedAt: api.serverTimestamp() });
+        return initial;
       });
+      adopt(committed, false);
     } finally { store.pending = false; notify(); }
   };
   store.dispatch = async (input) => {
@@ -79,20 +82,24 @@ export function createStore(onChange) {
           let latest = store.state;
           const saved = localStorage.getItem(localKey);
           if (saved) latest = normalizeState(JSON.parse(saved));
-          if (latest.revision !== expectedRevision) { store.state = latest; throw new Error('另一個視窗已更新資料，請重新開啟表單或確認最新比分後再操作。'); }
+          adopt(latest);
+          if (input.type !== 'set-score' && latest.revision !== expectedRevision) throw new Error('另一個視窗已更新資料，請重新開啟表單或確認最新比分後再操作。');
           const next = reduce(latest, action);
           localStorage.setItem(localKey, JSON.stringify(next)); store.state = next;
         };
         if (navigator.locks) await navigator.locks.request(localKey, write); else write();
       } else {
-        await api.runTransaction(db, async transaction => {
+        const committed = await api.runTransaction(db, async transaction => {
           const snap = await transaction.get(reference);
           if (!snap.exists()) throw new Error('找不到賽事。');
           const latest = decodeFirestore(snap.data());
-          if (latest.revision !== expectedRevision) throw new Error('另一位管理者已更新資料，請重新開啟表單或確認最新比分後再操作。');
+          adopt(latest);
+          if (input.type !== 'set-score' && latest.revision !== expectedRevision) throw new Error('另一位管理者已更新資料，請重新開啟表單或確認最新比分後再操作。');
           const next = reduce(latest, action);
           transaction.set(reference, { ...encodeFirestore(next), updatedAt: api.serverTimestamp() });
+          return next;
         });
+        adopt(committed, false);
       }
     } catch (error) { throw new Error(readableError(error)); }
     finally { store.pending = false; notify(); }

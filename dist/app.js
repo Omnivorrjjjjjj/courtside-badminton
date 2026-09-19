@@ -1,5 +1,5 @@
-import { PAIRS, TYPE_LABELS, pairStats, standings, winner, clone } from './model.js';
-import { createStore, readableError } from './store.js';
+import { PAIRS, TYPE_LABELS, pairStats, standings, winner, clone, scoreEntryIsCurrent } from './model.js?v=manual-score-1';
+import { createStore, readableError } from './store.js?v=manual-score-1';
 
 const $ = selector => document.querySelector(selector);
 const publishedTitle = document.title.replace(/ · COURTSIDE$/, '');
@@ -14,7 +14,7 @@ const icons = {
 };
 const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || ''}</svg>`;
 let view = 'overview', selectedPair = 'AB', selectedMatch = null, adminTab = 'score', focusedMatch = null;
-const lineupDrafts = new Map();
+const lineupDrafts = new Map(), scoreDrafts = new Map();
 let toastTimer, store, adminFeedback = '', pendingFocusLabel = '';
 store = createStore(() => { render(); refreshAdmin(); });
 const statusLabel = () => store.error ? '資料讀取失敗' : !store.ready ? '連線中' : store.mode === 'demo' ? '本機示範' : store.pending ? '同步中…' : store.connected ? '即時連線' : navigator.onLine ? '等待雲端同步' : '連線中斷';
@@ -84,7 +84,14 @@ function schedule(s) { return `<main><h2 class="page-title">完整賽程 <span c
 function rosters(s) { return `<main><h2 class="page-title">參賽隊伍 <span class="subtle">3 隊・12 位球員</span></h2><div class="teams-grid">${Object.values(s.teams).map(t=>`<section class="panel roster"><h2><span class="team-chip" style="background:${t.color}">${t.id}</span>${escape(t.name)}</h2>${t.players.map((p,i)=>`<div class="person"><div class="avatar">0${i+1}</div><span>${escape(p.name)}</span><small>${p.gender==='M'?'男':'女'}</small></div>`).join('')}</section>`).join('')}</div></main>`; }
 
 function openAdmin() { adminFeedback='';pendingFocusLabel='';focusedMatch ||= store.state?.matches.find(isActive)?.id || store.state?.matches[0]?.id; renderAdmin(); if (!$('#admin-dialog').open) $('#admin-dialog').showModal(); }
-function refreshAdmin() { if ($('#admin-dialog').open && ((store.isAdmin && adminTab === 'score') || store.isAdmin !== !!$('#admin-dialog .admin-tabs'))) renderAdmin(); }
+function refreshAdmin() {
+  if (!$('#admin-dialog').open) return;
+  if (store.isAdmin !== !!$('#admin-dialog .admin-tabs')) return renderAdmin();
+  if (!store.isAdmin || adminTab !== 'score') return;
+  const form=$('#score-entry-form'),m=store.state?.matches.find(m=>m.id===focusedMatch);
+  if(form&&m&&form.dataset.matchId===m.id&&isActive(m)) refreshScoreEntry();
+  else renderAdmin();
+}
 function renderAdmin() {
   const focusedLabel=document.activeElement?.getAttribute('aria-label')||pendingFocusLabel;
   if(store.pending&&focusedLabel)pendingFocusLabel=focusedLabel;
@@ -96,7 +103,7 @@ function renderAdmin() {
   if(focusedLabel)$('#admin-dialog').querySelector(`[aria-label="${CSS.escape(focusedLabel)}"]`)?.focus({preventScroll:true});
   if(!store.pending)pendingFocusLabel='';
 }
-function loginForm() { return store.mode==='demo' ? '<p class="notice">你可以試用加減分、上場名單、文字播報與賽制設定。這裡的示範資料只在同一瀏覽器內保存。</p><button class="button" data-demo-login>進入示範控制台</button>' : '<form id="login-form" class="login-form"><p class="notice">觀眾不需登入；只有賽事管理者可以修改比分與播報。</p><label>電子郵件<input type="email" name="email" autocomplete="username" required></label><label>密碼<input type="password" name="password" autocomplete="current-password" required></label><button class="button" type="submit">登入管理介面</button><p class="error hidden" id="login-error" role="alert"></p></form>'; }
+function loginForm() { return store.mode==='demo' ? '<p class="notice">你可以試用直接輸入比分、上場名單、文字播報與賽制設定。這裡的示範資料只在同一瀏覽器內保存。</p><button class="button" data-demo-login>進入示範控制台</button>' : '<form id="login-form" class="login-form"><p class="notice">觀眾不需登入；只有賽事管理者可以修改比分與播報。</p><label>電子郵件<input type="email" name="email" autocomplete="username" required></label><label>密碼<input type="password" name="password" autocomplete="current-password" required></label><button class="button" type="submit">登入管理介面</button><p class="error hidden" id="login-error" role="alert"></p></form>'; }
 function adminContent() {
   if(adminTab==='score') return scoreAdmin();
   if(adminTab==='broadcast') return '<form id="broadcast-form" class="form-stack"><h3>現場文字播報</h3><label>播報內容<textarea name="message" maxlength="500" placeholder="例如：A 隊連得 3 分，雙方戰成 20：20！" required></textarea></label><div class="actions"><button class="button" type="submit">發布播報</button></div><p class="field-help">最多 500 字。最新消息會顯示在觀眾首頁。</p></form>';
@@ -109,10 +116,62 @@ function scoreAdmin() {
   const staleDraft=m.status==='pending'&&lineupDrafts.has(m.id)&&lineupDrafts.get(m.id).revision!==s.revision;
   const disable = store.pending || !store.connected;
   return `<div class="admin-match"><label>選擇比賽<select id="match-select">${s.matches.map(x=>`<option value="${x.id}" ${x.id===m.id?'selected':''}>${x.sides.join(' vs ')}・${x.label} — ${statusName(x.status)} ${x.score.join('：')}</option>`).join('')}</select></label>
-    <div class="admin-score">${m.sides.map((id,i)=>`<div class="admin-side"><span>${id}・${escape(s.teams[id].name)}</span><strong>${m.score[i]}</strong><div class="score-controls"><button class="button secondary" data-delta="-1" data-side="${i}" aria-label="${id} 隊減 1 分" ${disable||m.status!=='live'||m.score[i]===0?'disabled':''}>−</button><button class="button" data-delta="1" data-side="${i}" aria-label="${id} 隊加 1 分" ${disable||m.status!=='live'||winner(m,s.settings)!==null?'disabled':''}>＋</button></div></div>`).join('')}</div>
-    <div class="actions">${m.status==='pending'||m.status==='paused'?`<button class="button" data-command="start" ${disable||staleDraft?'disabled':''}>${m.status==='paused'?'恢復比賽':'確認名單並開賽'}</button>`:''}${m.status==='live'?`<button class="button secondary" data-command="pause" ${disable?'disabled':''}>暫停</button>`:''}${isActive(m)?`<button class="button secondary" data-command="undo" ${disable||!m.history?.length?'disabled':''}>${icon('undo')}復原上一球</button><button class="button" data-command="finish" ${disable||winner(m,s.settings)===null?'disabled':''}>確認完賽</button>`:''}${m.status==='finished'?`<button class="button secondary" data-command="reopen" ${disable?'disabled':''}>重新開啟，修正比分</button>`:''}</div>
-    <p class="field-help">${store.pending?'同步中，請等待確認。':'比分確認完賽後才計入勝場。已達局末分數時，可減分修正或確認完賽。'}</p>
+    ${isActive(m)?scoreEntry(s,m):`<div class="admin-score">${m.sides.map((id,i)=>`<div class="admin-side"><span>${id}・${escape(s.teams[id].name)}</span><strong>${m.score[i]}</strong></div>`).join('')}</div>`}
+    ${!isActive(m)&&scoreDrafts.has(m.id)?'<p class="notice">本場狀態已變更，未送出的比分不會套用。開賽或重新開啟後，請重新輸入。</p>':''}<div class="actions score-actions">${scoreActions(s,m)}</div>
+    <p class="field-help">比分更新後，達到獲勝條件即可確認完賽。輸入錯誤時，可直接改分或復原上次更新。</p>
     ${m.status==='pending'?`<form id="lineup-form" class="lineup-edit"><h3>本場上場球員 · ${escape(m.label)}</h3>${staleDraft?'<div class="notice">賽事已有更新。請載入最新名單後重新選擇球員。<button class="button secondary" type="button" data-reload-lineup>載入最新名單</button></div>':''}<p class="field-help">選好球員後，按「確認名單並開賽」即可一併儲存。</p>${m.sides.map((id,i)=>`<fieldset style="border:0;padding:0;margin:0"><legend style="font-size:.875rem;margin-bottom:8px">${id}・${escape(s.teams[id].name)}</legend><div class="check-options">${s.teams[id].players.map(p=>`<label><input type="checkbox" name="side${i}" value="${p.id}" ${currentLineups[i].includes(p.id)?'checked':''}>${escape(p.name)}（${p.gender==='M'?'男':'女'}）</label>`).join('')}</div></fieldset>`).join('')}<button class="button secondary" type="submit" ${disable||staleDraft?'disabled':''}>只儲存名單，稍後開賽</button></form>`:`<p class="notice">${escape(players(s,m,0))}<br>vs ${escape(players(s,m,1))}</p>`}</div>`;
+}
+function scoreEntry(s,m) {
+  const draft=scoreDrafts.get(m.id),values=draft?.values||m.score.map(String);
+  return `<form id="score-entry-form" data-match-id="${m.id}" class="score-entry"><div class="admin-score">${m.sides.map((id,i)=>`<label class="admin-side"><span data-score-label="${i}">${id}・${escape(s.teams[id].name)}</span><input name="score${i}" class="score-input" type="text" inputmode="numeric" pattern="[0-9]+" maxlength="3" autocomplete="off" enterkeyhint="${i===0?'next':'done'}" aria-label="${id} 隊比分" value="${escape(values[i])}" required></label>`).join('')}</div><p class="score-saved">已同步比分：<strong data-saved-score>${m.score.join('：')}</strong></p><div class="score-conflict notice hidden"><span>本場已有新的比分，請先載入再輸入。</span><button type="button" class="button secondary" data-reload-score>載入最新比分</button></div><button class="button score-submit" type="submit">更新比分</button><p class="field-help" data-score-help>可一次輸入多分，也可直接修正比分；輸入後按更新或 Enter。</p></form>`;
+}
+function scoreActions(s,m) {
+  const draft=scoreDrafts.get(m.id),dirty=isActive(m)&&!!draft&&draft.values.some((v,i)=>v!==String(m.score[i]));
+  const disable=store.pending||!store.connected||dirty;
+  const staleLineup=m.status==='pending'&&lineupDrafts.has(m.id)&&lineupDrafts.get(m.id).revision!==s.revision;
+  return `${m.status==='pending'||m.status==='paused'?`<button class="button" data-command="start" ${disable||staleLineup?'disabled':''}>${m.status==='paused'?'恢復比賽':'確認名單並開賽'}</button>`:''}${m.status==='live'?`<button class="button secondary" data-command="pause" ${disable?'disabled':''}>暫停</button>`:''}${isActive(m)?`<button class="button secondary" data-command="undo" ${disable||!m.history?.length?'disabled':''}>${icon('undo')}復原上次更新</button><button class="button" data-command="finish" ${disable||winner(m,s.settings)===null?'disabled':''}>確認完賽</button>`:''}${m.status==='finished'?`<button class="button secondary" data-command="reopen" ${disable?'disabled':''}>重新開啟，修正比分</button>`:''}`;
+}
+function refreshScoreEntry() {
+  const form=$('#score-entry-form');if(!form)return;
+  const s=store.state,m=s.matches.find(m=>m.id===form.dataset.matchId);if(!m)return;
+  const draft=scoreDrafts.get(m.id);
+  const stale=!!draft&&!scoreEntryIsCurrent(s,{matchId:m.id,expectedScore:draft.expectedScore,expectedStatus:draft.expectedStatus});
+  const dirty=!!draft&&draft.values.some((v,i)=>v!==String(m.score[i]));
+  if(!draft){form.baseScore=[...m.score];form.baseStatus=m.status;for(let i=0;i<2;i++){const input=form.elements[`score${i}`];if(input.value!==String(m.score[i]))input.value=String(m.score[i]);}}
+  form.querySelector('[data-saved-score]').textContent=m.score.join('：');
+  form.querySelector('.score-conflict').classList.toggle('hidden',!stale||store.pending);
+  const button=form.querySelector('[type=submit]');button.disabled=store.pending||!store.connected||!dirty||stale;
+  button.textContent=store.pending?'更新中…':'更新比分';
+  form.querySelector('[data-score-help]').textContent=store.pending?'正在同步；你可以先輸入下一筆比分。':!store.connected?'連線中斷，輸入內容已保留；連線恢復後可再更新。':dirty?'輸入後按「更新比分」或 Enter；更新後再確認完賽。':'可一次輸入多分，也可直接修正比分；輸入後按更新或 Enter。';
+  m.sides.forEach((id,i)=>{form.querySelector(`[data-score-label="${i}"]`).textContent=`${id}・${s.teams[id].name}`;});
+  $('.score-actions').innerHTML=scoreActions(s,m);bindCommands(store.state.revision);
+  $('#admin-dialog .admin-header p').textContent=store.mode==='demo'?'試操作・只儲存在此瀏覽器':statusLabel();
+  for(const option of $('#match-select').options){const match=s.matches.find(m=>m.id===option.value);if(match)option.textContent=`${match.sides.join(' vs ')}・${match.label} — ${statusName(match.status)} ${match.score.join('：')}`;}
+}
+function bindScoreEntry() {
+  const form=$('#score-entry-form');if(!form)return;
+  const id=form.dataset.matchId,m=store.state.matches.find(m=>m.id===id);
+  form.baseScore=[...m.score];form.baseStatus=m.status;
+  form.querySelectorAll('.score-input').forEach((input,i)=>{input.onfocus=()=>input.select();if(i===0)input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();form.elements.score1.focus();}};});
+  form.oninput=()=>{const previous=scoreDrafts.get(id);scoreDrafts.set(id,{values:[form.elements.score0.value,form.elements.score1.value],expectedScore:previous?.expectedScore||[...form.baseScore],expectedStatus:previous?.expectedStatus||form.baseStatus,version:(previous?.version||0)+1});refreshScoreEntry();};
+  form.querySelector('[data-reload-score]').onclick=()=>{scoreDrafts.delete(id);refreshScoreEntry();toast('已載入最新比分，請重新輸入。');};
+  form.onsubmit=async e=>{
+    e.preventDefault();if(store.pending)return;
+    const draft=scoreDrafts.get(id);if(!draft)return;
+    if(!draft.values.every(v=>/^\d+$/.test(v))){toast('請填寫雙方的整數比分。');return;}
+    const values=draft.values.map(Number),version=draft.version;
+    try{
+      await store.dispatch({type:'set-score',matchId:id,score:values,expectedScore:[...draft.expectedScore],expectedStatus:draft.expectedStatus});
+      const remaining=scoreDrafts.get(id);
+      if(remaining?.version===version)scoreDrafts.delete(id);
+      else if(remaining){remaining.expectedScore=values;remaining.expectedStatus=draft.expectedStatus;}
+      refreshAdmin();toast(`比分已更新：${values.join('：')}`);
+    }catch(error){refreshAdmin();toast(error.message);}
+  };
+  refreshScoreEntry();
+}
+function bindCommands(formRevision) {
+  document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{const action={type:b.dataset.command,matchId:focusedMatch,baseRevision:formRevision};const form=$('#lineup-form');if(action.type==='start'&&form){const data=new FormData(form);action.lineups=[data.getAll('side0'),data.getAll('side1')];action.baseRevision=lineupDrafts.get(focusedMatch)?.revision??formRevision}if(await dispatch(action)){lineupDrafts.delete(action.matchId);scoreDrafts.delete(action.matchId);renderAdmin()}});
 }
 function settingsAdmin() {
   const s=store.state,config=s.settings,locked=s.matches.some(m=>m.status!=='pending'||m.score.some(n=>n!==0));
@@ -128,8 +187,8 @@ function bindAdmin() {
   const login=$('#login-form');if(login)login.onsubmit=async e=>{e.preventDefault();const form=new FormData(login);try{await store.login(form.get('email'),form.get('password'));renderAdmin()}catch(error){$('#login-error').textContent=readableError(error);$('#login-error').classList.remove('hidden')}};
   const init=$('[data-initialize]');if(init)init.onclick=async()=>{try{await store.initialize();renderAdmin();toast('賽事已建立')}catch(error){toast(readableError(error))}};
   const select=$('#match-select');if(select)select.onchange=()=>{focusedMatch=select.value;renderAdmin()};
-  document.querySelectorAll('[data-delta]').forEach(b=>b.onclick=()=>dispatch({type:'score',matchId:focusedMatch,side:Number(b.dataset.side),delta:Number(b.dataset.delta)},store.mode==='demo'?'示範比分已更新':'比分已同步'));
-  document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{const action={type:b.dataset.command,matchId:focusedMatch,baseRevision:formRevision};const form=$('#lineup-form');if(action.type==='start'&&form){const data=new FormData(form);action.lineups=[data.getAll('side0'),data.getAll('side1')];action.baseRevision=lineupDrafts.get(focusedMatch)?.revision??formRevision}if(await dispatch(action)){lineupDrafts.delete(action.matchId);renderAdmin()}});
+  bindCommands(formRevision);
+  bindScoreEntry();
   const lineup=$('#lineup-form');if(lineup){lineup.onchange=()=>{const data=new FormData(lineup);lineupDrafts.set(focusedMatch,{revision:lineupDrafts.get(focusedMatch)?.revision??formRevision,lineups:[data.getAll('side0'),data.getAll('side1')]})};lineup.onsubmit=async e=>{e.preventDefault();const form=new FormData(lineup),id=focusedMatch;if(await dispatch({type:'lineup',matchId:id,lineups:[form.getAll('side0'),form.getAll('side1')],baseRevision:lineupDrafts.get(id)?.revision??formRevision},'上場名單已儲存')){lineupDrafts.delete(id);renderAdmin()}}};
   const reloadLineup=$('[data-reload-lineup]');if(reloadLineup)reloadLineup.onclick=()=>{lineupDrafts.delete(focusedMatch);renderAdmin();toast('已載入最新名單，請重新選擇上場球員。')};
   const broadcast=$('#broadcast-form');if(broadcast)broadcast.onsubmit=async e=>{e.preventDefault();const textarea=broadcast.elements.message,button=broadcast.querySelector('button');button.disabled=true;const success=await dispatch({type:'commentary',text:textarea.value},'播報已發布');if(success)textarea.value='';button.disabled=false};
@@ -137,7 +196,7 @@ function bindAdmin() {
   const settings=$('#settings-form');if(settings)settings.onsubmit=async e=>{e.preventDefault();const form=new FormData(settings),config=clone(store.state.settings);for(const key of ['target','cap','winBy','matchWinPoints','tieWinPoints','tieDrawPoints'])if(form.has(key))config[key]=Number(form.get(key));for(const key of ['standingsMode','broadcast'])config[key]=form.get(key);if(form.has('types'))config.types=String(form.get('types')).split(/[,，、]/).map(t=>{const v=t.trim();return Object.keys(TYPE_LABELS).find(k=>TYPE_LABELS[k]===v)||v.toUpperCase()}).filter(Boolean);if(await dispatch({type:'settings',settings:config,title:form.get('title'),venue:form.get('venue'),baseRevision:formRevision},'設定已更新'))renderAdmin()};
   const pointsMode=$('[name=standingsMode]');if(pointsMode)pointsMode.onchange=()=>{document.querySelectorAll('[data-points-mode]').forEach(el=>el.classList.toggle('hidden',el.dataset.pointsMode!==pointsMode.value))};
   const exp=$('[data-export]');if(exp)exp.onclick=()=>{const blob=new Blob([JSON.stringify(store.state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`courtside-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('備份已下載')};
-  const reset=$('[data-reset]');if(reset)reset.onclick=async()=>{if(prompt('這會清空所有比分與播報。請先匯出備份，再輸入「清空」確認。')==='清空'){if(await dispatch({type:'reset'},'比分與播報已清空')){lineupDrafts.clear();focusedMatch=null;renderAdmin()}}};
+  const reset=$('[data-reset]');if(reset)reset.onclick=async()=>{if(prompt('這會清空所有比分與播報。請先匯出備份，再輸入「清空」確認。')==='清空'){if(await dispatch({type:'reset'},'比分與播報已清空')){lineupDrafts.clear();scoreDrafts.clear();focusedMatch=null;renderAdmin()}}};
   const logout=$('[data-logout]');if(logout)logout.onclick=async()=>{await store.logout();renderAdmin()};
 }
 document.addEventListener('click',e=>{if(e.target.closest('[data-action="back-live"]')){selectedMatch=null;render()}});

@@ -91,3 +91,27 @@ test('starting a match atomically saves the currently selected lineup', () => {
   assert.throws(()=>reduce(initial,{type:'start',matchId:'AB-0',lineups:[['A1','A4'],['B1','B2']]}),/組合/);
   assert.equal(initial.matches[0].status,'pending');
 });
+
+test('manual score entry jumps both scores atomically and one undo restores the whole update', () => {
+  const initial=createState();
+  const next=reduce(initial,{type:'set-score',matchId:'AB-1',score:[25,27],expectedScore:[18,21],expectedStatus:'live'});
+  assert.deepEqual(next.matches[1].score,[25,27]);
+  assert.deepEqual(standings(next).map(t=>[t.id,t.points]),[['A',56],['B',53],['C',0]]);
+  assert.deepEqual(reduce(next,{type:'undo',matchId:'AB-1'}).matches[1].score,[18,21]);
+  assert.deepEqual(initial.matches[1].score,[18,21]);
+});
+test('manual scores allow corrections while paused and require confirmation for finished results', () => {
+  let state=reduce(createState(),{type:'pause',matchId:'AB-1'});
+  state=reduce(state,{type:'set-score',matchId:'AB-1',score:[15,20],expectedScore:[18,21],expectedStatus:'paused'});
+  state=reduce(state,{type:'set-score',matchId:'AB-1',score:[31,29],expectedScore:[15,20],expectedStatus:'paused'});
+  assert.equal(state.matches[1].status,'paused');
+  state=reduce(state,{type:'finish',matchId:'AB-1'});
+  assert.throws(()=>reduce(state,{type:'set-score',matchId:'AB-1',score:[30,29],expectedScore:[31,29],expectedStatus:'finished'}),/重新開啟/);
+});
+test('manual score entry rejects invalid totals and stale same-match scores', () => {
+  const state=createState(),base={type:'set-score',matchId:'AB-1',expectedScore:[18,21],expectedStatus:'live'};
+  for(const score of [[-1,20],[1.5,20],[32,20],[31,31],['25',26],[25],null,[18,21]])assert.throws(()=>reduce(state,{...base,score}));
+  assert.throws(()=>reduce(state,{...base,score:[25,26],expectedScore:[17,21]}),/已被更新/);
+  assert.throws(()=>reduce(state,{...base,score:[25,26],expectedStatus:'paused'}),/已被更新/);
+  assert.throws(()=>reduce(state,{...base,score:[25,26],expectedScore:undefined}),/已被更新/);
+});
